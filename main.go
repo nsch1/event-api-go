@@ -7,18 +7,31 @@ import (
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 	"encoding/json"
-	"gopkg.in/go-playground/validator.v9"
+	"net/url"
 )
 
 type Event struct {
 	gorm.Model
-	Name string `gorm:"not null" validate:"min=3"`
+	Name string `gorm:"not null" json:"name"`
+}
+
+func (e *Event) validate() url.Values {
+	errs := url.Values{}
+
+	if e.Name == "" {
+		errs.Add("name", "Event name is required.")
+	}
+
+	if len(e.Name) < 3 {
+		errs.Add("name", "Event names must be at least 3 characters long.")
+	}
+
+	return errs
 }
 
 var (
 	db *gorm.DB
 	err error
-	validate *validator.Validate
 )
 
 func main() {
@@ -29,8 +42,6 @@ func main() {
 	defer db.Close()
 
 	db.AutoMigrate(&Event{})
-
-	validate = validator.New()
 
 	router := mux.NewRouter()
 	router.HandleFunc("/events", GetEvents).Methods("GET")
@@ -48,16 +59,21 @@ func GetEvents(w http.ResponseWriter, r *http.Request) {
 
 func CreateEvent(w http.ResponseWriter, r *http.Request) {
 	var event Event
-	json.NewDecoder(r.Body).Decode(&event)
 
-	err := validate.Struct(event)
-	if err != nil {
-		http.Error(w, "Name must be at least 3 characters.", http.StatusBadRequest)
-		return
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&event); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
+	encoder := json.NewEncoder(w)
+	if validationErrs := event.validate(); len(validationErrs) > 0 {
+		err := map[string]interface{}{"ValidationError": validationErrs}
+		w.WriteHeader(http.StatusBadRequest)
+		encoder.Encode(err)
 	}
 
 	db.Create(&event)
-	json.NewEncoder(w).Encode(&event)
+	encoder.Encode(&event)
 }
 
 func GetEvent(w http.ResponseWriter, r *http.Request) {
