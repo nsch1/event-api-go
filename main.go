@@ -46,6 +46,22 @@ func (e *TempEvent) validate() url.Values {
 	return errs
 }
 
+func (e *TempEvent) parseDates(errs url.Values) (time.Time, time.Time, url.Values) {
+	const timeFormat = "2006-01-02"
+
+	sD, err := time.Parse(timeFormat, e.StartDate)
+	if err != nil {
+		errs.Add("startDate", "Date format should be: YYYY-MM-DD")
+	}
+
+	eD, err := time.Parse(timeFormat, e.EndDate)
+	if err != nil {
+		errs.Add("endDate", "Date format should be: YYYY-MM-DD")
+	}
+
+	return sD, eD, errs
+}
+
 var (
 	db *gorm.DB
 	err error
@@ -82,24 +98,14 @@ func CreateEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
+	validationErrs := tempEvent.validate()
 	encoder := json.NewEncoder(w)
-	if validationErrs := tempEvent.validate(); len(validationErrs) > 0 {
+
+	sD, eD, validationErrs := tempEvent.parseDates(validationErrs)
+	if len(validationErrs) > 0 {
 		err := map[string]interface{}{"ValidationError": validationErrs}
 		w.WriteHeader(http.StatusBadRequest)
 		encoder.Encode(err)
-		return
-	}
-
-	const timeFormat = "2006-01-02"
-
-	sD, err := time.Parse(timeFormat, tempEvent.StartDate)
-	if err != nil {
-		http.Error(w, "Date format should be: YYYY-MM-DD", http.StatusBadRequest)
-		return
-	}
-	eD, err := time.Parse(timeFormat, tempEvent.EndDate)
-	if err != nil {
-		http.Error(w, "Date format should be: YYYY-MM-DD", http.StatusBadRequest)
 		return
 	}
 
