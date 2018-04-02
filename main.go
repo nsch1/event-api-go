@@ -8,14 +8,23 @@ import (
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 	"encoding/json"
 	"net/url"
+	"time"
 )
+
+type TempEvent struct {
+	Name string `json:"name"`
+	StartDate string `json:"startDate"`
+	EndDate string `json:"endDate"`
+}
 
 type Event struct {
 	gorm.Model
 	Name string `gorm:"not null" json:"name"`
+	StartDate  time.Time `json:"startDate"`
+	EndDate time.Time `json:"endDate"`
 }
 
-func (e *Event) validate() url.Values {
+func (e *TempEvent) validate() url.Values {
 	errs := url.Values{}
 
 	if e.Name == "" {
@@ -24,6 +33,14 @@ func (e *Event) validate() url.Values {
 
 	if len(e.Name) < 3 {
 		errs.Add("name", "Event names must be at least 3 characters long.")
+	}
+
+	if e.StartDate == "" {
+		errs.Add("startDate", "A start date is required.")
+	}
+
+	if e.EndDate == "" {
+		errs.Add("endDate", "An end date is required.")
 	}
 
 	return errs
@@ -58,19 +75,35 @@ func GetEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func CreateEvent(w http.ResponseWriter, r *http.Request) {
-	var event Event
+	var tempEvent TempEvent
 
 	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&event); err != nil {
+	if err := decoder.Decode(&tempEvent); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 
 	encoder := json.NewEncoder(w)
-	if validationErrs := event.validate(); len(validationErrs) > 0 {
+	if validationErrs := tempEvent.validate(); len(validationErrs) > 0 {
 		err := map[string]interface{}{"ValidationError": validationErrs}
 		w.WriteHeader(http.StatusBadRequest)
 		encoder.Encode(err)
+		return
 	}
+
+	const timeFormat = "2006-01-02"
+
+	sD, err := time.Parse(timeFormat, tempEvent.StartDate)
+	if err != nil {
+		http.Error(w, "Date format should be: YYYY-MM-DD", http.StatusBadRequest)
+		return
+	}
+	eD, err := time.Parse(timeFormat, tempEvent.EndDate)
+	if err != nil {
+		http.Error(w, "Date format should be: YYYY-MM-DD", http.StatusBadRequest)
+		return
+	}
+
+	event := Event{Name:tempEvent.Name, StartDate:sD, EndDate:eD}
 
 	db.Create(&event)
 	encoder.Encode(&event)
